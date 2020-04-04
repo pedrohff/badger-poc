@@ -2,68 +2,110 @@ package main
 
 import (
 	"fmt"
-	"github.com/dgraph-io/badger/v2"
 	"github.com/pedrohff/badger-poc/pkg"
 	"github.com/pedrohff/badger-poc/pkg/cars"
-	"github.com/stretchr/testify/assert"
 	"sync"
 	"testing"
 	"time"
 )
 
-func TestPerformance(t *testing.T) {
-
+func BenchmarkSeparatingTestsTogglingCacheLayer(b *testing.B) {
 	type benchTest struct {
-		requests       int
-		cacheSize      int
-		dbNetworkDelay int
+		percentageOfCachedObjects int
+		dbNetworkDelay            int
 	}
 
 	dbNetworkDelay := 150
+	goroutineLimit := 100000
+	goroutineStartAt := 100
+	goroutineMultiplier := 10
+
 	tests := []benchTest{
-		{1000, 15, dbNetworkDelay},
-		{10000, 15, dbNetworkDelay},
-		{100000, 15, dbNetworkDelay},
-		{1000, 100, dbNetworkDelay},
-		{10000, 100, dbNetworkDelay},
-		{100000, 100, dbNetworkDelay},
-		{1000, 1000, dbNetworkDelay},
-		{10000, 1000, dbNetworkDelay},
-		{100000, 1000, dbNetworkDelay},
+		{5, dbNetworkDelay},
+		{15, dbNetworkDelay},
+		{40, dbNetworkDelay},
+		{70, dbNetworkDelay},
 	}
 
-	for _, test := range tests {
-		var totalGain int64
-		t.Run(fmt.Sprintf("%d requests - caching %d items", test.requests, test.cacheSize), func(t *testing.T) {
-			for i := 0; i < 100; i++ {
+	// Running tests for the scenario without cache layer
+	for goroutineCount := goroutineStartAt; goroutineCount <= goroutineLimit; goroutineCount *= goroutineMultiplier {
+		badgerDb := pkg.SetupBadger()
+		repository := cars.NewRepository(badgerDb, dbNetworkDelay)
+		b.Run(fmt.Sprintf("[NOCACHE] %d requests", goroutineCount), func(b *testing.B) {
+			group := sync.WaitGroup{}
+			group.Add(goroutineCount)
 
-				timerWithCache := benchMarkReturningMillisSpent(test.requests, test.cacheSize, true, test.dbNetworkDelay)
-				timerWithNoCache := benchMarkReturningMillisSpent(test.requests, test.cacheSize, false, test.dbNetworkDelay)
-
-				//fmt.Printf("Cache timer: %dms\n", timerWithCache)
-				//fmt.Printf("No cache timer: %dms\n", timerWithNoCache)
-
-				totalGain += timerWithNoCache - timerWithCache
-
-				// TODO swap this with counters and just measure the percentage of success
-				assert.True(t, timerWithNoCache > timerWithCache)
+			// Each interaction of this loop will represent a data access
+			for i := 0; i < goroutineCount; i++ {
+				id := fmt.Sprintf("test%d", i)
+				go func(id string) {
+					repository.FindById(id)
+					group.Done()
+				}(id)
 			}
+			group.Wait()
 		})
-		avgGain := totalGain / 100
-		fmt.Printf("Requests: %d | CacheSize: %d | Avg gain: %dms\n", test.requests, test.cacheSize, avgGain)
 	}
 
+	// Running tests for the scenario with cache layer
+	for _, test := range tests {
+		for goroutineCount := goroutineStartAt; goroutineCount <= goroutineLimit; goroutineCount *= goroutineMultiplier {
+
+			// Logic to avoid unnecessary loops or unnecessary cached objects
+			finalCacheSize := int((float64(test.percentageOfCachedObjects) / 100) * float64(goroutineCount))
+
+			//for benchmarkRepeatedLoops := 0; benchmarkRepeatedLoops < b.N; benchmarkRepeatedLoops++ {
+
+			badgerDb := pkg.SetupBadger()
+			repository := cars.NewRepository(badgerDb, test.dbNetworkDelay)
+
+			for i := 0; i < finalCacheSize; i++ {
+				id := fmt.Sprintf("test%d", i)
+				if i < finalCacheSize {
+					repository.Save(cars.Car{
+						Id:           id,
+						Model:        "S" + id,
+						Manufacturer: "Tesla" + id,
+					})
+				}
+			}
+			b.Run(fmt.Sprintf("[>>CACHE] %d requests - caching %d%%(%d items)", goroutineCount, test.percentageOfCachedObjects, finalCacheSize), func(b *testing.B) {
+				group := sync.WaitGroup{}
+				group.Add(goroutineCount)
+
+				// Each interaction of this loop will represent a data access
+				for i := 0; i < goroutineCount; i++ {
+					id := fmt.Sprintf("test%d", i)
+					go func(id string) {
+						repository.FindById(id)
+						group.Done()
+					}(id)
+				}
+				group.Wait()
+			})
+			badgerDb.Close()
+		}
+	}
 }
 
-func benchMarkReturningMillisSpent(amountOfRequests int, amountToCache int, shouldCache bool, dbNetworkDelayMillis int) int64 {
-	timeStarted := time.Now()
+//1400673600
+//1364517100
+//306148ms - 306148400700
+// 82530ms -  82530983900
+func BenchmarkAbc(t *testing.B) {
+	timestart := time.Now()
+	dbNetworkDelayMillis := 150
+	amountToCache := 1500
+	amountOfRequests := 2048
+	enableCache := true
+
 	badgerDb := pkg.SetupBadger()
 	repository := cars.NewRepository(badgerDb, dbNetworkDelayMillis)
 	group := sync.WaitGroup{}
-	group.Add(amountOfRequests)
-	for i := 0; i < amountOfRequests; i++ {
-		id := fmt.Sprintf("test%d", i%amountToCache)
-		if shouldCache {
+
+	if enableCache {
+		for i := 0; i < amountToCache; i++ {
+			id := fmt.Sprintf("test%d", i)
 			if i < amountToCache {
 				repository.Save(cars.Car{
 					Id:           id,
@@ -72,15 +114,31 @@ func benchMarkReturningMillisSpent(amountOfRequests int, amountToCache int, shou
 				})
 			}
 		}
-		go func(id string, cache *badger.DB) {
-			//start := time.Now()
-			repository.FindById(id)
-			//fmt.Printf("[%d] time: %dms\n", index, time.Since(start).Milliseconds())
-			group.Done()
+	}
 
-		}(id, badgerDb)
+	repeatLoops := 1
+	group.Add(amountOfRequests * repeatLoops)
+	// Each test will be repeated N times according to "repeatLoops"
+	for range make([]int, repeatLoops) {
+		// Each interaction of this loop will represent a data access
+		for i := 0; i < amountOfRequests; i++ {
+			id := fmt.Sprintf("test%d", i)
+			if enableCache {
+				if i < amountToCache {
+					repository.Save(cars.Car{
+						Id:           id,
+						Model:        "S" + id,
+						Manufacturer: "Tesla" + id,
+					})
+				}
+			}
+			//go func(id string, cache *badger.DB) {
+			repository.FindById(id)
+			group.Done()
+			//}(id, badgerDb)
+		}
 	}
 	group.Wait()
 	badgerDb.Close()
-	return time.Since(timeStarted).Milliseconds()
+	fmt.Printf("time: %dms\n", time.Since(timestart).Milliseconds())
 }

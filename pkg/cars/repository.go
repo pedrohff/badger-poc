@@ -4,7 +4,7 @@ import (
 	"github.com/dgraph-io/badger/v2"
 )
 
-type repository interface {
+type Repository interface {
 	FindById(id string) (*Car, error)
 	Save(car Car) (*Car, error)
 	Update(car Car) (*Car, error)
@@ -15,7 +15,7 @@ type repositoryOrchestrator struct {
 	database databaseRepository
 }
 
-func NewRepository(cache *badger.DB, dbNetworkDelay int) repository {
+func NewRepository(cache *badger.DB, dbNetworkDelay int) Repository {
 	return repositoryOrchestrator{
 		cache:    cacheRepository{cache: cache},
 		database: databaseRepository{dbNetworkDelay: dbNetworkDelay},
