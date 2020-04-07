@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/jinzhu/gorm"
 	"github.com/pedrohff/badger-poc/pkg"
 	"github.com/pedrohff/badger-poc/pkg/cars"
 	"sync"
@@ -9,13 +10,26 @@ import (
 	"time"
 )
 
+func setupDb() {
+	var err error
+	cars.Database, err = gorm.Open("postgres", "host=localhost port=5432 user=postgres dbname=cars_db password=admin sslmode=disable")
+	cars.Database.DB().SetMaxIdleConns(10)
+	cars.Database.DB().SetMaxOpenConns(30)
+	if err != nil {
+		panic(err)
+	}
+}
+
 func BenchmarkSeparatingTestsTogglingCacheLayer(b *testing.B) {
+	setupDb()
+	defer cars.Database.Close()
+
 	type benchTest struct {
 		percentageOfCachedObjects int
 		dbNetworkDelay            int
 	}
 
-	dbNetworkDelay := 150
+	dbNetworkDelay := 0
 	goroutineLimit := 100000
 	goroutineStartAt := 100
 	goroutineMultiplier := 10
@@ -141,4 +155,10 @@ func BenchmarkAbc(t *testing.B) {
 	group.Wait()
 	badgerDb.Close()
 	fmt.Printf("time: %dms\n", time.Since(timestart).Milliseconds())
+}
+
+func FuncaoSomaRetornoEstranho(x int, y int) (resultado int, retornoEhPositivo bool) {
+	resultado = x + y
+	retornoEhPositivo = resultado >= 0
+	return
 }

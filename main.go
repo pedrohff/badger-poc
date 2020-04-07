@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"github.com/dgraph-io/badger/v2"
 	"github.com/dgraph-io/badger/v2/y"
+	"github.com/jinzhu/gorm"
+	_ "github.com/jinzhu/gorm/dialects/postgres"
 	"github.com/pedrohff/badger-poc/pkg"
 	"github.com/pedrohff/badger-poc/pkg/cars"
 	"sync"
@@ -11,6 +13,13 @@ import (
 )
 
 func main() {
+	var err error
+	cars.Database, err = gorm.Open("postgres", "host=localhost port=5432 user=postgres dbname=cars_db password=admin sslmode=disable")
+	if err != nil {
+		panic(err)
+	}
+	defer cars.Database.Close()
+
 	badgerDb := pkg.SetupBadger()
 	repository := cars.NewRepository(badgerDb, 100)
 

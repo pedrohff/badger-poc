@@ -1,8 +1,6 @@
 package cars
 
 import (
-	"encoding/json"
-	"fmt"
 	"time"
 )
 
@@ -18,17 +16,8 @@ func (d databaseRepository) FindById(id string) (*Car, error) {
 	// 150
 	time.Sleep(time.Millisecond * time.Duration(d.dbNetworkDelay))
 
-	// Adding some complexity to it
-	for a := 1; a <= 10; a++ {
-		for b := 1; b <= 10; b++ {
-			for c := 1; c <= 10; c++ {
-				_ = a * (b * c)
-			}
-		}
-	}
-	jsonStr := fmt.Sprintf(`{"Id": "%s", "Model":"Uno", "Manifacturer": "Fiat"}`, id)
 	var car Car
-	e := json.Unmarshal([]byte(jsonStr), &car)
+	e := Database.Where("id = ?", id).Find(&car).Error
 	if e != nil {
 		return nil, e
 	}

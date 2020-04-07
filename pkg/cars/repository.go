@@ -2,7 +2,10 @@ package cars
 
 import (
 	"github.com/dgraph-io/badger/v2"
+	"github.com/jinzhu/gorm"
 )
+
+var Database *gorm.DB
 
 type Repository interface {
 	FindById(id string) (*Car, error)
