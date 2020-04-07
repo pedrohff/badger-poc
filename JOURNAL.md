@@ -2,7 +2,6 @@
 
 ## April 4th, 2020
 
-`[2pm]`  
 As I'm having lots of stuff to implement, structure and test, came to mind an idea of writing out the ideas passing through the development of this proof of concept.
 
 For now, the structure of the code seems to be exactly what I would use in a production system, it lacks only a few tweaks on how and when the data should be cached, and some more control or exposition over the cache layer.
