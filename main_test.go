@@ -5,6 +5,7 @@ import (
 	"github.com/jinzhu/gorm"
 	"github.com/pedrohff/badger-poc/pkg"
 	"github.com/pedrohff/badger-poc/pkg/cars"
+	"math/rand"
 	"sync"
 	"testing"
 	"time"
@@ -46,6 +47,8 @@ func BenchmarkSeparatingTestsTogglingCacheLayer(b *testing.B) {
 		badgerDb := pkg.SetupBadger()
 		repository := cars.NewRepository(badgerDb, dbNetworkDelay)
 		b.Run(fmt.Sprintf("[NOCACHE] %d requests", goroutineCount), func(b *testing.B) {
+			// Clearing all database cache
+			defer cars.Database.Exec("discard all")
 			group := sync.WaitGroup{}
 			group.Add(goroutineCount)
 
@@ -68,13 +71,17 @@ func BenchmarkSeparatingTestsTogglingCacheLayer(b *testing.B) {
 			// Logic to avoid unnecessary loops or unnecessary cached objects
 			finalCacheSize := int((float64(test.percentageOfCachedObjects) / 100) * float64(goroutineCount))
 
-			//for benchmarkRepeatedLoops := 0; benchmarkRepeatedLoops < b.N; benchmarkRepeatedLoops++ {
+			// Creating an unordered array so the database rows won't be read sequentially
+			unorderedIntArray := createUnorderedArray(goroutineCount)
 
 			badgerDb := pkg.SetupBadger()
 			repository := cars.NewRepository(badgerDb, test.dbNetworkDelay)
 
+			// Forcing data to be saved to cache
+			// This is not the best approach for saving data to cache, its just the best way for me to control directly what is being cached
+			// Also, the save method on the database repository is not doing anything
 			for i := 0; i < finalCacheSize; i++ {
-				id := fmt.Sprintf("test%d", i)
+				id := fmt.Sprintf("test%d", unorderedIntArray[i])
 				if i < finalCacheSize {
 					repository.Save(cars.Car{
 						Id:           id,
@@ -83,13 +90,16 @@ func BenchmarkSeparatingTestsTogglingCacheLayer(b *testing.B) {
 					})
 				}
 			}
+
 			b.Run(fmt.Sprintf("[>>CACHE] %d requests - caching %d%%(%d items)", goroutineCount, test.percentageOfCachedObjects, finalCacheSize), func(b *testing.B) {
+				// Clearing all database cache
+				defer cars.Database.Exec("discard all")
 				group := sync.WaitGroup{}
 				group.Add(goroutineCount)
 
 				// Each interaction of this loop will represent a data access
 				for i := 0; i < goroutineCount; i++ {
-					id := fmt.Sprintf("test%d", i)
+					id := fmt.Sprintf("test%d", unorderedIntArray[i])
 					go func(id string) {
 						repository.FindById(id)
 						group.Done()
@@ -102,63 +112,14 @@ func BenchmarkSeparatingTestsTogglingCacheLayer(b *testing.B) {
 	}
 }
 
-//1400673600
-//1364517100
-//306148ms - 306148400700
-// 82530ms -  82530983900
-func BenchmarkAbc(t *testing.B) {
-	timestart := time.Now()
-	dbNetworkDelayMillis := 150
-	amountToCache := 1500
-	amountOfRequests := 2048
-	enableCache := true
-
-	badgerDb := pkg.SetupBadger()
-	repository := cars.NewRepository(badgerDb, dbNetworkDelayMillis)
-	group := sync.WaitGroup{}
-
-	if enableCache {
-		for i := 0; i < amountToCache; i++ {
-			id := fmt.Sprintf("test%d", i)
-			if i < amountToCache {
-				repository.Save(cars.Car{
-					Id:           id,
-					Model:        "S" + id,
-					Manufacturer: "Tesla" + id,
-				})
-			}
-		}
+// This function can be improved, as it seems that rand.Shuffle already creates an unordered array
+// so maybe the first loop is unnecessary
+func createUnorderedArray(arrayLength int) []int {
+	resultArray := make([]int, 0)
+	for i := 0; i < arrayLength; i++ {
+		resultArray = append(resultArray, i)
 	}
-
-	repeatLoops := 1
-	group.Add(amountOfRequests * repeatLoops)
-	// Each test will be repeated N times according to "repeatLoops"
-	for range make([]int, repeatLoops) {
-		// Each interaction of this loop will represent a data access
-		for i := 0; i < amountOfRequests; i++ {
-			id := fmt.Sprintf("test%d", i)
-			if enableCache {
-				if i < amountToCache {
-					repository.Save(cars.Car{
-						Id:           id,
-						Model:        "S" + id,
-						Manufacturer: "Tesla" + id,
-					})
-				}
-			}
-			//go func(id string, cache *badger.DB) {
-			repository.FindById(id)
-			group.Done()
-			//}(id, badgerDb)
-		}
-	}
-	group.Wait()
-	badgerDb.Close()
-	fmt.Printf("time: %dms\n", time.Since(timestart).Milliseconds())
-}
-
-func FuncaoSomaRetornoEstranho(x int, y int) (resultado int, retornoEhPositivo bool) {
-	resultado = x + y
-	retornoEhPositivo = resultado >= 0
-	return
+	rand.Seed(time.Now().UnixNano())
+	rand.Shuffle(len(resultArray), func(i, j int) { resultArray[i], resultArray[j] = resultArray[j], resultArray[i] })
+	return resultArray
 }

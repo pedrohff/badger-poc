@@ -14,7 +14,27 @@ Therefore, my next move will be to connect a real database to the project, check
 
 ## April 7th, 2020
 
-Starting describing the day before, I did as planned, connected the project to a PostgreSQL database, created its structure, installed [GORM](https://gorm.io/) (the ORM I use at work) then set everything up. The structure of the database variable is not ideal, please do not take this as a good pattern, at least try to protect the access to the database, I'm leaving it like this for tests purpose only.
+Starting describing the day before, I did as planned, connected the project to a PostgreSQL database, created its structure, installed [GORM](https://gorm.io/) (the ORM I use at work) then set everything up. The database was populated following this script:
+
+```sql
+create database cars_db;
+
+create table cars(
+    id varchar primary key,
+    model varchar(255),
+    manufacturer varchar(255)
+);
+
+do $$
+    begin
+        for r in 1..1000000 loop
+                insert into public.cars(id, model, manufacturer) values('test' || r, 'S', 'Tesla');
+            end loop;
+    end;
+$$;
+```
+
+> Disclaimer: The structure for the global database variable is not ideal, please do not take this as a good pattern, at least try to protect the access to the database, I'm leaving it like this for tests purpose only.
 
 This initial database setup took me some time, then I got back to testing, integrating them with the database. For starters, I still left a 150ms delay before each database access to simulate a scenario where there's a considerable physical distance between the application and the database, as this used to be a production scenario for some time.  
 
@@ -22,3 +42,7 @@ The first thing I noticed during the first tests, was that there was a gap in th
 
 As expected, I finally got the results I wanted, the cache layer always showed performance improvement as the cache size increased. The final touch ups before publishing and documenting the results, I pretend to randomize the access of each database row, and try to clean up the database's cache after each test, again, to remove any bias.
        
+       
+`2nd entry`
+
+Done with testing, will start documenting the results. Still, there's more to be done related to how the code is structured. The next challenge will be to study a little bit more on design patterns to evaluate the strategy used on the multi-layered/orchestrated repository. I remind of similar strategies while I used to study Android development, as you always want to avoid fetching data from a back-end, and the data could be cached/fetched in multiple repositories, so I want to bring this to a Golang environment the best possible way.
